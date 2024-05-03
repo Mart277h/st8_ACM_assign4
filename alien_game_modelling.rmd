@@ -1,0 +1,208 @@
+---
+title: "alien_game_modelling"
+author: "Marc Barcelos"
+date: "2024-05-02"
+output: html_document
+---
+
+My idea was just to treat danger as 0 and 1 binary then translating outside of stan so that our data's responses match that by making a new response varibale from the existing response variable (1 and 2 -> 0 & 3 and 4 -> 1). I think it makes using ricardos existing model easier.
+
+```{r}
+pacman::p_load(cmdstanr, tidyverse, brms, future, furrr)
+
+set.seed(1234)
+```
+
+```{r}
+# Read in Alien Data
+alien_df <- read_csv("AlienData.txt")
+
+# Make individual varibales for our two factors of interest
+alien_df$fact1 <- substr(alien_df$stimulus, 1, 1)
+alien_df$fact2 <- substr(alien_df$stimulus, 2, 2)
+```
+
+```{r}
+# Defining the stimuli, their height and position features, and their category
+stimulus <- c(00,01,10,11)
+fact1 <- c(0, 0, 1, 1)
+fact2 <- c(0, 1, 0, 1)
+category <- as.factor(c(0, 0, 0, 1))
+
+# Making this into a tibble
+stimuli <- tibble(stimulus, fact1, fact2, category)
+
+# Plotting to make sure all looks right
+ggplot(stimuli, aes(fact2, fact1, color = category, label = stimulus)) +
+  geom_point(shape = 16, size = 3) +
+  geom_label() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_bw()
+```
+
+
+```{r}
+# Generating the sequence of stimuli in the full experiment
+ntrials = 100
+sequence <- c()
+for (i in 1:ntrials) {
+  # Generate a random two-digit binary number
+  temp <- paste(sample(0:1, 1), sample(0:1, 1))
+  sequence <- append(sequence, temp)
+}
+
+experiment <- tibble(stimulus = sequence, fact1 = nrow(ntrials), fact2 = nrow(ntrials), category = nrow(ntrials))
+
+for (i in seq(nrow(experiment))) {
+  experiment$fact1[i] <- stimuli$fact1[substr(stimuli$stimulus, 1, 1) == experiment$stimulus[i]]
+  experiment$fact2[i] <- stimuli$fact2[substr(stimuli$stimulus, 2, 2) == experiment$stimulus[i]]
+  experiment$category[i] <- as.numeric(as.character(stimuli$category[stimuli$stimulus == experiment$stimulus[i]]))
+}
+```
+
+
+```{r}
+# Distance 
+distance <- function(fact1, fact2, weight) {
+  return(sum(weight * abs(fact1 - fact2)))
+}
+
+# Similarity
+similarity <- function(distance, c) {
+  return(exp(-c * distance))
+}
+
+# Let's assess similarity
+dd <- tibble(
+  expand_grid(
+    distance = c(0,.1,.2, .3,.4,.5,1,1.5,2,3,4,5,6), 
+    c = c(0.1, 0.2, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 6))) %>% 
+  mutate(
+    similarity = similarity(distance, c)
+  )
+
+dd %>% mutate(c = factor(c)) %>%
+  ggplot() +
+  geom_line(aes(distance, similarity, group = c, color = c)) + 
+  theme_bw()
+```
+
+```{r}
+### generative model ###
+gcm <- function(weight, c, obs, cat_safe, quiet = TRUE) {
+  # create an empty list to save probability of saying "1" for each trial
+  r <- c()
+  
+  ntrials <- nrow(obs)
+  
+  for (i in 1:ntrials) {
+    # If quiet is FALSE, print every ten trials
+    if (!quiet && i %% 10 == 0) {
+      print(paste("i =", i))
+    }
+    # if this is the first trial, or there any category with no exemplars seen yet, set the choice to random
+    if (i == 1 || sum(cat_safe[1:(i - 1)]) == 0 || sum(cat_one[1:(i - 1)]) == (i - 1)) {
+      r <- c(r, .5)
+    } else {
+      similarities <- c()
+      # for each previously seen stimulus assess distance and similarity
+      for (e in 1:(i - 1)) {
+        sim <- similarity(distance(obs[i, ], obs[e, ], w), c)
+        similarities <- c(similarities, sim)
+      }
+      # Calculate prob of saying "1" by dividing similarity to 1 by the sum of similarity to 1 and to 2
+      numerator <- 0.5 * sum(similarities[cat_one[1:(i - 1)] == 1])
+      denominator <- 0.5 * sum(similarities[cat_one[1:(i - 1)] == 1]) + 0.5 * sum(similarities[cat_one[1:(i - 1)] == 0])
+      r <- c(r, numerator / denominator)
+    }
+  }
+
+  return(rbinom(ntrials, 1, r))
+}
+```
+ 
+
+```{r}
+# function for simulation responses
+simulate_responses <- function(agent, weight, c) {
+    
+    observations <- experiment %>%
+        select(c("fact1", "fact2"))
+    
+    category <- experiment$category
+    
+    if (weight == "equal") {
+        weight <- rep(1 / 2, 2)
+    } else if (weight == "skewed1") {
+        weight <- c(0, 1)
+    } else if (weight == "skewed2") {
+        weight <- c(0.1, 0.9)
+    }
+
+    # simulate responses
+    responses <- gcm(
+        weight,
+        c,
+        observations,
+        category
+    )
+    
+    tmp_simulated_responses <- experiment %>%
+        mutate(
+            trial = seq(nrow(experiment)),
+            sim_response = responses,
+            correct = ifelse(category == sim_response, 1, 0),
+            performance = cumsum(correct) / seq_along(correct),
+            c = c,
+            weight = weight,
+            agent = agent
+        )
+
+    return(tmp_simulated_responses)
+}
+
+
+# simulate responses
+plan(multisession, workers = availableCores())
+
+param_df <- dplyr::tibble(
+    expand_grid(
+        agent = 1:10,
+        c = seq(.1, 2, 0.2),
+        weight = c("equal", "skewed1", "skewed2")
+    )
+)
+
+simulated_responses <- future_pmap_dfr(param_df,
+    simulate_responses,
+    .options = furrr_options(seed = TRUE)
+)
+```
+
+```{r}
+p3 <- simulated_responses %>%
+  mutate(weight = as.factor(weight)) %>%
+  ggplot(aes(trial, performance, group = weight, color = weight)) +
+  geom_smooth() +
+  theme_bw() +
+  facet_wrap(c ~ .)
+
+p4 <- simulated_responses %>%
+  mutate(c = as.factor(c)) %>%
+  ggplot(aes(trial, performance, group = c, color = c)) +
+  geom_smooth() +
+  theme_bw() +
+  facet_wrap(w ~ .)
+
+p3 + p4
+```
+
+```{r}
+p5 <- simulated_responses %>%
+  mutate(c = as.factor(c)) %>%
+  ggplot(aes(st, performance, group = c, color = c)) +
+  geom_smooth() +
+  theme_bw() +
+  facet_wrap(w ~ .)
+```
+

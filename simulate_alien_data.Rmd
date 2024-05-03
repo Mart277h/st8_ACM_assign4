@@ -1,0 +1,244 @@
+---
+title: "simulate_alien_data"
+author: "Martine Lind Jensen"
+date: "2024-04-26"
+output: html_document
+---
+We have to simulate data from the experiment 
+
+```{r}
+pacman::p_load(tidyverse, cmdstanr, future, furrr, brms)
+```
+
+```{r}
+df <- read_delim("AlienData.txt")
+```
+
+Structure of the experiment:
+
+- the stimuli are conceptualized as 5 dimensional vectors of 0s and 1s (5 features, binary values)
+
+- there are 32 possible stimuli, all 32 stimuli are presented in randomized order, in three iterations (stimuli 1-32 in random order, stimuli 1-32 in a new random order, stimuli 1-32 in a new random order).
+
+- the stimuli are categorized along two dimensions: danger (0-1) and nutrition (0-1). Feel free to simplify your life and only consider one dimension (but kudos for considering both).
+the association between feature and category varies over session. 
+
+- In the first session: danger depends on the alien having spots AND eyes on stalks (feature 1 AND feature 2 both being 1); nutrition depends on arms being up (feature 4 being 1).
+    **We only need to model first session**
+
+
+Simulating the data and full sequence of stimuli shown in the experiment. We only work with dangerous or not, but we include all 5 features of the feature space.
+
+**PLOT NEEDS CLEAN-UP**
+
+```{r}
+#creating stimuli, each feature can be 0 or 1 (up or down, blue or green, on or off)
+arms <- c(0,1)
+legs <- c(0,1)
+eyes <- c(0,1) #eyes on 1 = dangerous
+spots <- c(0,1) #spots on 1 = dangerous
+color <- c(0,1)
+
+#Expanding the feature grid to have the 32 stimuli
+feature_grid <- expand.grid(arms = arms, legs = legs, eyes = eyes, spots = spots, color = color)
+
+#Selecting which stimuli is dangerous 
+feature_grid <- feature_grid %>% mutate(
+  dangerous = ifelse(spots == 1 & eyes == 1, dangerous <- 1, dangerous <- 0)
+)
+
+#shuffle the stimuli 
+experiment <- feature_grid[sample(nrow(feature_grid)), ]
+
+#Plotting the 32 stimuli (not done)
+ggplot(stimuli) + 
+  geom_point(aes(arms, dangerous), color = "red", position = "jitter") +
+  geom_point(aes(legs, dangerous), color = "green", position = "jitter") +
+  geom_point(aes(spots, dangerous), color = "blue", position = "jitter") +
+  geom_point(aes(eyes, dangerous), color = "orange", position = "jitter") +
+  geom_point(aes(color, dangerous), color = "yellow", position = "jitter") +
+  facet_wrap(.~ row.names(stimuli))
+
+```
+
+
+
+CODE FROM LECTURE: to see the structure used  
+```{r CODE FROM LECTURE}
+# Defining the stimuli, their height and position features, and their category
+stimulus1 <- c(5,3,7,1,8,2,6,4)
+height <- c(1,1, 2,2, 3,3, 4,4)
+position <- c(2,3, 1,4, 1,4, 2,3)
+category <- as.factor(c(0,0, 1,0, 1,0, 1,1))
+
+# Making this into a tibble
+stimuli1 <- tibble(stimulus1, height, position, category)
+
+
+
+# Generating the sequence of stimuli in the full experiment
+sequence <- c()
+for (i in 1:8) {
+  temp <- sample(seq(8), 8, replace = F)
+  sequence <- append(sequence, temp)
+}
+
+experiment1 <- tibble(stimulus1 = sequence, height = NA, position = NA, category = NA)
+for (i in seq(nrow(experiment1))) {
+  experiment1$height[i] <- stimuli1$height[stimuli1$stimulus1 == experiment1$stimulus1[i]]
+  experiment1$position[i] <- stimuli1$position[stimuli1$stimulus1 == experiment1$stimulus1[i]]
+  experiment1$category[i] <- as.numeric(as.character(stimuli1$category[stimuli1$stimulus1 == experiment1$stimulus1[i]]))
+}
+```
+
+```{r distance and similarity functions}
+# Distance 
+distance <- function(fact1, fact2, weight) {
+  return(sum(weight * abs(fact1 - fact2)))
+}
+
+# Similarity
+similarity <- function(distance, c) {
+  return(exp(-c * distance))
+}
+
+# Let's assess similarity
+dd <- tibble(
+  expand_grid(
+    distance = c(0,.1,.2, .3,.4,.5,1,1.5,2,3,4,5,6), 
+    c = c(0.1, 0.2, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 6))) %>% 
+  mutate(
+    similarity = similarity(distance, c)
+  )
+
+#Plotting
+dd %>% mutate(c = factor(c)) %>%
+  ggplot() +
+  geom_line(aes(distance, similarity, group = c, color = c)) + 
+  theme_bw()
+```
+
+```{r gcm function}
+### generative model ###
+gcm <- function(weight, c, obs, cat_dangerous) {
+  
+  # create an empty list to save probability of saying "1" for each trial
+  r <- c()
+  
+  ntrials <- nrow(obs)
+  
+  for (i in 1:ntrials) {
+
+    # if this is the first trial, or there any category with no exemplars seen yet, set the choice to random
+    if (i == 1 || sum(cat_dangerous[1:(i - 1)]) == 0 || sum(cat_dangerous[1:(i - 1)]) == (i - 1)) {
+      r <- c(r, .5)
+    } else {
+      similarities <- c()
+      # for each previously seen stimulus assess distance and similarity
+      for (e in 1:(i - 1)) {
+        sim <- similarity(distance(obs[i, ], obs[e, ], weight), c)
+        similarities <- c(similarities, sim)
+      }
+      # Calculate prob of saying "1" by dividing similarity to 1 by the sum of similarity to 1 and to 2
+      numerator <- 0.5 * sum(similarities[cat_dangerous[1:(i - 1)] == 1])
+      denominator <- 0.5 * sum(similarities[cat_dangerous[1:(i - 1)] == 1]) + 0.5 * sum(similarities[cat_dangerous[1:(i - 1)] == 0])
+      r <- c(r, numerator / denominator)
+    }
+  }
+
+  return(rbinom(ntrials, 1, r))
+}
+```
+
+```{r simulated response function}
+# function for simulation responses
+simulate_responses <- function(agent, weight, c) {
+    
+    observations <- experiment %>%
+        select(c("arms", "legs", "spots", "eyes", "color"))
+    
+    dangerous <- experiment$dangerous
+    
+    if (weight == "equally") {
+        weighted <- rep(0.2,5) #weighting each feature equally with 0.2 
+    } else if (weight == "optimally") {
+        weighted <- c(0, 0, 0.5, 0.5, 0) #Weighting spots and eyes equally since they are the dangerous features. Given the other features a weight of 0
+    } 
+
+    # simulate responses
+    responses <- gcm(
+        weighted,
+        c,
+        observations,
+        dangerous
+    )
+    
+    tmp_simulated_responses <- experiment %>%
+        mutate(
+            trial = seq(nrow(experiment)),
+            sim_response = responses,
+            correct = ifelse(dangerous == sim_response, 1, 0),
+            performance = cumsum(correct) / seq_along(correct),
+            c = c,
+            weight = weight,
+            agent = agent
+        )
+
+    return(tmp_simulated_responses)
+}
+
+
+# simulate responses
+plan(multisession, workers = availableCores())
+
+param_df <- dplyr::tibble(
+    expand_grid(
+        agent = 1:10,
+        c = seq(.1, 2, 0.2),
+        weight = c("equally", "optimally")
+    )
+)
+
+simulated_responses <- future_pmap_dfr(param_df,
+    simulate_responses,
+    .options = furrr_options(seed = TRUE)
+)
+```
+
+
+```{r plotting simulated responses}
+
+#Optimally by agent
+simulated_responses %>% 
+  subset(weight == "optimally") %>% 
+  ggplot(aes(x = trial, y = performance, color = as.factor(agent))) +
+  geom_line () +
+  facet_wrap(.~ c) +
+  labs(x = "Trial", y = "Performance", color = "Agent") + 
+  theme_minimal()+ 
+  ggtitle("Weighted optimally")
+
+#Equally by agent
+simulated_responses %>% 
+  subset(weight == "equally") %>% 
+  ggplot(aes(x = trial, y = performance, color = as.factor(agent))) +
+  geom_line () +
+  facet_wrap(.~ c) +
+  labs(x = "Trial", y = "Performance", color = "Agent") + 
+  theme_minimal()+ 
+  ggtitle("Weighted equally")
+
+#Averaged over agent 
+ggplot(simulated_responses, aes(trial, performance, group = weight, color = weight)) +
+  geom_smooth() +
+  theme_minimal() +
+  labs(x = "Trial", y = "Performance", color = "Weight") + 
+  facet_wrap(c ~ .)
+
+ggplot(simulated_responses, aes(trial, performance, group = as.factor(c), color = as.factor(c))) +
+  geom_smooth() +
+  theme_minimal() +
+  labs(x = "Trial", y = "Performance", color = "C") + 
+  facet_wrap(weight ~ .)
+
+```

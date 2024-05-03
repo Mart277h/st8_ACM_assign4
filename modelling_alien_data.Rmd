@@ -1,0 +1,126 @@
+---
+title: "modelling_alien_data"
+author: "Martine Lind Jensen"
+date: "2024-05-03"
+output: html_document
+---
+```{r}
+pacman::p_load(tidyverse, cmdstanr, future, furrr, brms)
+
+set.seed(1234)
+```
+
+```{r compile model}
+file <- file.path("alien.stan")
+
+alien_GCM <- cmdstan_model(file, cpp_options = list(stan_threads = TRUE),
+                     stanc_options = list("O1"))
+```
+
+```{r}
+d_0.9_equally <- simulated_responses %>% subset(
+  c == "0.9" & weight == "equally"
+)
+
+gcm_data <- list(
+  ntrials = nrow(d_0.9_equally),
+  nfeatures = 5,
+  cat_one = d_0.9_equally$dangerous,
+  y = d_0.9_equally$sim_response,
+  obs = as.matrix(d_0.9_equally[, c("arms", "legs", "spots", "eyes", "color")]),
+  b = 0.5,
+  w_prior_values = c(1, 1, 1, 1, 1),
+  c_prior_values = c(0, 1)
+)
+
+samples_gcm <- alien_GCM$sample(
+  data = gcm_data,
+  seed = 123,
+  chains = 1,
+  parallel_chains = 1,
+  threads_per_chain = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 500
+)
+
+samples_gcm$cmdstan_diagnose()
+
+samples_gcm$summary()
+
+```
+
+```{r}
+draws_0.9_equally <- as_draws_df(samples_gcm$draws())
+```
+
+
+```{r chains}
+ggplot(draws_0.9_equally, aes(.iteration, c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration, logit_c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration,  `w[1]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration,  `w[2]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration,  `w[3]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration,  `w[4]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_0.9_equally, aes(.iteration,  `w[5]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+```
+
+```{r prior posterior update checks}
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(c), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(c_prior), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = d_0.9_equally$c[1]) +
+  theme_minimal()
+
+
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(`w[1]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w_prior[1]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.2) +
+  theme_minimal()
+
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(`w[2]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w_prior[2]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.2) +
+  theme_minimal()
+
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(`w[3]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w_prior[3]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.2) +
+  theme_minimal()
+
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(`w[4]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w_prior[4]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.2) +
+  theme_minimal()
+
+ggplot(draws_0.9_equally) +
+  geom_histogram(aes(`w[5]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w_prior[5]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.2) +
+  theme_minimal()
+```
+
