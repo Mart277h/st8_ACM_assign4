@@ -1,6 +1,6 @@
 data {
     int<lower=1> ntrials;  // number of trials
-    int<lower=1> nfeatures;  // number of predefined relevant features
+    int<lower=1> nfeatures;  // number of features, eg. 5 for eyes, legs, color, spots, arms
     array[ntrials] int<lower=0, upper=1> cat_one; // true responses on a trial by trial basis
     array[ntrials] int<lower=0, upper=1> y;  // decisions on a trial by trial basis
     array[ntrials, nfeatures] real obs; // stimuli as vectors of features

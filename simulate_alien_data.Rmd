@@ -51,7 +51,7 @@ feature_grid <- feature_grid %>% mutate(
 experiment <- feature_grid[sample(nrow(feature_grid)), ]
 
 #Plotting the 32 stimuli (not done)
-ggplot(stimuli) + 
+ggplot(experiment) + 
   geom_point(aes(arms, dangerous), color = "red", position = "jitter") +
   geom_point(aes(legs, dangerous), color = "green", position = "jitter") +
   geom_point(aes(spots, dangerous), color = "blue", position = "jitter") +
@@ -236,9 +236,10 @@ ggplot(simulated_responses, aes(trial, performance, group = weight, color = weig
   facet_wrap(c ~ .)
 
 ggplot(simulated_responses, aes(trial, performance, group = as.factor(c), color = as.factor(c))) +
-  geom_smooth() +
+  geom_smooth(SE = TRUE, alpha = 0.15) +
   theme_minimal() +
   labs(x = "Trial", y = "Performance", color = "C") + 
   facet_wrap(weight ~ .)
 
 ```
+

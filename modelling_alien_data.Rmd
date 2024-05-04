@@ -5,7 +5,7 @@ date: "2024-05-03"
 output: html_document
 ---
 ```{r}
-pacman::p_load(tidyverse, cmdstanr, future, furrr, brms)
+pacman::p_load(tidyverse, cmdstanr, future, furrr, brms, purrr)
 
 set.seed(1234)
 ```
@@ -17,7 +17,8 @@ alien_GCM <- cmdstan_model(file, cpp_options = list(stan_threads = TRUE),
                      stanc_options = list("O1"))
 ```
 
-```{r}
+#d_0.9_equally
+```{r d_0.9_equally}
 d_0.9_equally <- simulated_responses %>% subset(
   c == "0.9" & weight == "equally"
 )
@@ -43,17 +44,14 @@ samples_gcm <- alien_GCM$sample(
   iter_sampling = 1000,
   refresh = 500
 )
+samples_gcm$save_object("models/samples_gcm_0.9_equally.rds")
 
 samples_gcm$cmdstan_diagnose()
 
 samples_gcm$summary()
 
-```
-
-```{r}
 draws_0.9_equally <- as_draws_df(samples_gcm$draws())
 ```
-
 
 ```{r chains}
 ggplot(draws_0.9_equally, aes(.iteration, c, group = .chain, color = .chain)) +
@@ -87,40 +85,455 @@ ggplot(draws_0.9_equally, aes(.iteration,  `w[5]`, group = .chain, color = .chai
 
 ```{r prior posterior update checks}
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(c), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(c), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(c_prior), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = d_0.9_equally$c[1]) +
   theme_minimal()
 
 
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(`w[1]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w[1]`), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(`w_prior[1]`), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = 0.2) +
   theme_minimal()
 
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(`w[2]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w[2]`), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(`w_prior[2]`), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = 0.2) +
   theme_minimal()
 
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(`w[3]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w[3]`), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(`w_prior[3]`), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = 0.2) +
   theme_minimal()
 
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(`w[4]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w[4]`), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(`w_prior[4]`), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = 0.2) +
   theme_minimal()
 
 ggplot(draws_0.9_equally) +
-  geom_histogram(aes(`w[5]`), alpha = 0.6, fill = "lightblue") +
+  geom_histogram(aes(`w[5]`), alpha = 0.6, fill = "darkolivegreen3") +
   geom_histogram(aes(`w_prior[5]`), alpha = 0.6, fill = "pink") +
   geom_vline(xintercept = 0.2) +
   theme_minimal()
+```
+
+
+#d_1.9_optimally
+```{r d_1.9_optimally}
+d_1.9_optimally <- simulated_responses %>% subset(
+  c == "1.9" & weight == "optimally"
+)
+
+gcm_data <- list(
+  ntrials = nrow(d_1.9_optimally),
+  nfeatures = 5,
+  cat_one = d_1.9_optimally$dangerous,
+  y = d_1.9_optimally$sim_response,
+  obs = as.matrix(d_1.9_optimally[, c("arms", "legs", "spots", "eyes", "color")]),
+  b = 0.5,
+  w_prior_values = c(1, 1, 1, 1, 1),
+  c_prior_values = c(0, 1)
+)
+
+samples_gcm <- alien_GCM$sample(
+  data = gcm_data,
+  seed = 123,
+  chains = 1,
+  parallel_chains = 1,
+  threads_per_chain = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 500
+)
+samples_gcm$save_object("models/samples_gcm_1.9_optimally.rds")
+
+samples_gcm$cmdstan_diagnose()
+
+samples_gcm$summary()
+
+draws_1.9_optimally <- as_draws_df(samples_gcm$draws())
+```
+
+```{r chains}
+ggplot(draws_1.9_optimally, aes(.iteration, c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration, logit_c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration,  `w[1]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration,  `w[2]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration,  `w[3]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration,  `w[4]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+
+ggplot(draws_1.9_optimally, aes(.iteration,  `w[5]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()
+```
+
+```{r prior posterior update checks}
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(c), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(c_prior), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = d_1.9_optimally$c[1]) +
+  theme_minimal()
+
+
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(`w[1]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[1]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(`w[2]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[2]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(`w[3]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[3]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.5) +
+  theme_minimal()
+
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(`w[4]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[4]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.5) +
+  theme_minimal()
+
+ggplot(draws_1.9_optimally) +
+  geom_histogram(aes(`w[5]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[5]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+```
+
+
+
+
+#Explore empirical data with visualizations
+```{r}
+df <- read_delim("AlienData.txt")
+
+#Clean data
+
+df <- df %>% 
+  filter(session == 1 & condition == 2) %>% 
+  mutate(
+    danger_response = ifelse(response == 3 | response == 4, 1, 0), # danger_response equals sim_response in simulated data
+    spots = as.numeric(substr(gsub("\\.jpg$", "", stimulus), 1,1)), #gsub to remove jpeg from stimulus string and recovering from 1 to 1 in the string etc.
+    eyes = as.numeric(substr(gsub("\\.jpg$", "", stimulus), 2,2)),
+    legs = as.numeric(substr(gsub("\\.jpg$", "", stimulus), 3,3)),
+    arms = as.numeric(substr(gsub("\\.jpg$", "", stimulus), 4,4)),
+    color = as.numeric(substr(gsub("\\.jpg$", "", stimulus), 5,5)), 
+    correct2 = ifelse(dangerous == danger_response, 1, 0) #creating a new correct column to indicate whether they got the dangerous part correctly
+  ) %>% 
+  group_by(subject) %>%  
+  mutate(performance = cumsum(correct2) / seq_along(correct2)) #then creating new performance on the dangerous correct for cumulative performance
+
+```
+
+```{r}
+#Emperical data: Performance by subject
+df %>% 
+  ggplot() +
+  geom_line(aes(x = trial, y = performance, color = as.factor(subject))) +
+  #geom_smooth(aes(x = trial, y = performance), color= "darkblue") +
+  stat_summary(aes(x = trial, y = performance), geom = "line", fun = "mean", color = "darkblue", size = 1) +
+  labs(x = "Trial", y = "Performance", color = "Subject") + 
+  theme_minimal()+ 
+  ggtitle("Emperical data: Performance by subject")
+
+
+df %>%
+  ggplot(aes(x = trial, y = performance, color = as.factor(subject))) +
+  geom_line () +
+  labs(x = "Trial", y = "Performance", color = "Subject") + 
+  theme_minimal()+ 
+  ggtitle("Emperical data: Performance by subject") + 
+  facet_wrap(.~ subject)
+
+```
+
+#Fit STAN model to empirical data. Create a loop over each subject to model, but sticking to one session
+
+Trying to fit to one participant. Looks alright.
+```{r}
+df_1 <- df %>% filter(subject == 1)
+
+data <- list(
+      ntrials = nrow(df_1),
+      nfeatures = 5,
+      cat_one = df_1$dangerous, #dangerous is the same across df
+      y = df_1$danger_response, #danger_response is the same as sim_response
+      obs = as.matrix(df_1[, c("arms", "legs", "spots", "eyes", "color")]),
+      b = 0.5,
+      w_prior_values = c(1, 1, 1, 1, 1),
+      c_prior_values = c(0, 2)
+    )
+
+samples_gcm <- alien_GCM$sample(
+      data = data,
+      seed = 123,
+      chains = 1,
+      parallel_chains = 1,
+      threads_per_chain = 4,
+      iter_warmup = 1000,
+      iter_sampling = 1000,
+      refresh = 500
+    )
+
+samples_gcm$save_object("models/samples_gcm_subject1.rds")
+
+samples_gcm$cmdstan_diagnose()
+
+samples_gcm$summary()
+
+subject1_fit <- as_draws_df(samples_gcm$draws())
+```
+
+```{r prior posterior update checks}
+ggplot(subject1_fit) +
+  geom_histogram(aes(c), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(c_prior), alpha = 0.6, fill = "pink") +
+  #geom_vline(xintercept = subject1_fit$c[1]) +
+  theme_minimal()
+
+
+ggplot(subject1_fit) +
+  geom_histogram(aes(`w[1]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[1]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+
+ggplot(subject1_fit) +
+  geom_histogram(aes(`w[2]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[2]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+
+ggplot(subject1_fit) +
+  geom_histogram(aes(`w[3]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[3]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.5) +
+  theme_minimal()
+
+ggplot(subject1_fit) +
+  geom_histogram(aes(`w[4]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[4]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0.5) +
+  theme_minimal()
+
+ggplot(subject1_fit) +
+  geom_histogram(aes(`w[5]`), alpha = 0.6, fill = "darkolivegreen3") +
+  geom_histogram(aes(`w_prior[5]`), alpha = 0.6, fill = "pink") +
+  geom_vline(xintercept = 0) +
+  theme_minimal()
+```
+
+```{r function didnt work}
+pacman::p_load(future, purrr, furrr)
+plan(multisession, workers = availableCores())
+
+alien_data_and_fit <- function(subject_no) {
+  
+    
+    temp <- df %>% subset(
+      subject == subject_no
+      )
+    
+    data <- list(
+      ntrials = nrow(temp),
+      nfeatures = 5,
+      cat_one = temp$dangerous, #dangerous is the same across df
+      y = temp$danger_response, #danger_response is the same as sim_response
+      obs = as.matrix(temp[, c("arms", "legs", "spots", "eyes", "color")]),
+      b = 0.5,
+      w_prior_values = c(1, 1, 1, 1, 1),
+      c_prior_values = c(0, 1)
+    )
+    
+    samples_gcm <- alien_GCM$sample(
+      data = data,
+      seed = 123,
+      chains = 1,
+      parallel_chains = 1,
+      threads_per_chain = 4,
+      iter_warmup = 1000,
+      iter_sampling = 1000,
+      refresh = 500
+    )
+    
+    draws_df <- as_draws_df(samples_gcm$draws()) 
+    temp <- tibble(estC = draws_df$c, 
+                   estW1 = draws_df$`w[1]`,
+                   estW2 = draws_df$`w[2]`,
+                   estW3 = draws_df$`w[3]`,
+                   estW4 = draws_df$`w[4]`,
+                   estW5 = draws_df$`w[5]`
+                   )
+    
+    return(temp)
+  
+}
+
+
+prior <- alien_data_and_fit(1)
+
+model_run_1_2 <- future_pmap_dfr(subjects_list_try, alien_data_and_fit, .options = furrr_options(seed = TRUE))
+
+write_csv(recovery_df, "simdata/W10_GCM_recoverydf.csv")
+```
+
+Running through all participants. 
+```{r}
+subjects <- 27
+#loos = c()
+#remove(draws_df_emp)
+for (i in seq(1:subjects)){
+  
+  #filtering the right subject
+  temp <- df %>% 
+    filter(subject == i)
+  
+  #taking the data for the subject
+  data <- list( 
+    ntrials = nrow(temp),
+    nfeatures = 5,
+    cat_one = temp$dangerous, #dangerous is the same across df
+    y = temp$danger_response, #danger_response is the same as sim_response
+    obs = as.matrix(temp[, c("arms", "legs", "spots", "eyes", "color")]),
+    b = 0.5,
+    w_prior_values = c(1, 1, 1, 1, 1),
+    c_prior_values = c(0, 2)#Broadening the prior with 2 because the prior is restrictive above 1, and we know that the c value probably is above 1 from simulated data
+  )
+  
+  #fitting model
+  samples_gcm <- alien_GCM$sample(
+      data = data,
+      seed = 123,
+      chains = 1,
+      parallel_chains = 1,
+      threads_per_chain = 4,
+      iter_warmup = 1000,
+      iter_sampling = 1000,
+      refresh = 500
+    )
+  
+  #adding the loos (doesnt work like i wanted it to)
+  #loos = c(loos, samples_gcm$loo())
+  
+  #adding the draws to the dataframe
+  temp_df <- as_draws_df(samples_gcm$draws())
+  
+  #adding the subject number
+  temp_df <- temp_df %>% 
+    mutate(subject = i)
+  
+  if (exists("draws_df_emp")) { draws_df_emp <- rbind(draws_df_emp, temp_df)} #remember to clean if reusing
+  else{draws_df_emp <- temp_df} 
+}
+```
+
+```{r}
+ggplot(draws_df_emp, aes(.iteration, c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()+ 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, logit_c, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()+ 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, `w[1]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()+ 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, `w[2]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()+ 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, `w[3]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic() + 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, `w[4]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic()+ 
+  facet_wrap(.~subject)
+
+ggplot(draws_df_emp, aes(.iteration, `w[5]`, group = .chain, color = .chain)) +
+  geom_line(alpha = 0.5) +
+  theme_classic() + 
+  facet_wrap(.~subject)
+```
+
+```{r}
+draws_df_emp %>% 
+  ggplot() +
+    geom_density(aes(c), alpha = 0.6, fill = "darkolivegreen3")+
+    geom_density(aes(c_prior), alpha = 0.6, fill = "pink")+
+    facet_wrap(~subject) +
+    theme_minimal()
+
+
+draws_df_emp %>% 
+  ggplot() +
+    geom_density(aes(`w[1]`), alpha = 0.6, fill = "darkolivegreen3") +
+    geom_density(aes(`w_prior[1]`), alpha = 0.6, fill = "pink") +
+    facet_wrap(~subject)+
+    theme_minimal()
+
+draws_df_emp %>% 
+  ggplot() +
+    geom_density(aes(`w[2]`), alpha = 0.6, fill = "darkolivegreen3") +
+    geom_density(aes(`w_prior[2]`), alpha = 0.6, fill = "pink") +
+    facet_wrap(~subject)+
+    theme_minimal()
+
+draws_df_emp %>% 
+  ggplot() +
+     geom_density(aes(`w[3]`), alpha = 0.6, fill = "darkolivegreen3") +
+    geom_density(aes(`w_prior[3]`), alpha = 0.6, fill = "pink") +
+    facet_wrap(~subject)+
+    theme_minimal()
+
+draws_df_emp %>% 
+  ggplot() +
+    geom_density(aes(`w[4]`), alpha = 0.6, fill = "darkolivegreen3") +
+    geom_density(aes(`w_prior[4]`), alpha = 0.6, fill = "pink") +
+    facet_wrap(~subject)+
+    theme_minimal()
+
+draws_df_emp %>% 
+  ggplot() +
+    geom_density(aes(`w[5]`), alpha = 0.6, fill = "darkolivegreen3") +
+    geom_density(aes(`w_prior[5]`), alpha = 0.6, fill = "pink") +
+    facet_wrap(~subject)+
+    theme_minimal()
 ```
 
