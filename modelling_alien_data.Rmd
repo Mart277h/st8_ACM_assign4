@@ -235,6 +235,8 @@ ggplot(draws_1.9_optimally) +
 ```{r}
 df <- read_delim("AlienData.txt")
 
+length(is.na(df$response))
+
 #Clean data
 
 df <- df %>% 
